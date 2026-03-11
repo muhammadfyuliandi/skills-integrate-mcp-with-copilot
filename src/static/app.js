@@ -3,6 +3,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const loginIcon = document.getElementById("user-icon");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+
+  // Track current authorization header for teacher actions
+  let authHeader = null;
+
+  // Show or hide delete buttons based on auth state
+  function shouldShowDelete() {
+    return authHeader !== null;
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -14,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
       activitiesList.innerHTML = "";
 
       // Populate activities list
+      activitySelect.innerHTML = "<option value=\"\">-- Select an activity --</option>";
       Object.entries(activities).forEach(([name, details]) => {
         const activityCard = document.createElement("div");
         activityCard.className = "activity-card";
@@ -30,7 +42,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${
+                        shouldShowDelete()
+                          ? `<button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button>`
+                          : ""
+                      }</li>`
                   )
                   .join("")}
               </ul>
@@ -56,7 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
         activitySelect.appendChild(option);
       });
 
-      // Add event listeners to delete buttons
+      // Add event listeners to delete buttons if they exist
       document.querySelectorAll(".delete-btn").forEach((button) => {
         button.addEventListener("click", handleUnregister);
       });
@@ -74,13 +90,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = button.getAttribute("data-email");
 
     try {
+      const options = {
+        method: "DELETE",
+        headers: authHeader ? { Authorization: authHeader } : {},
+      };
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
         )}/unregister?email=${encodeURIComponent(email)}`,
-        {
-          method: "DELETE",
-        }
+        options
       );
 
       const result = await response.json();
@@ -118,13 +136,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const activity = document.getElementById("activity").value;
 
     try {
+      const options = {
+        method: "POST",
+        headers: authHeader ? { Authorization: authHeader } : {},
+      };
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
         )}/signup?email=${encodeURIComponent(email)}`,
-        {
-          method: "POST",
-        }
+        options
       );
 
       const result = await response.json();
@@ -152,6 +172,66 @@ document.addEventListener("DOMContentLoaded", () => {
       messageDiv.className = "error";
       messageDiv.classList.remove("hidden");
       console.error("Error signing up:", error);
+    }
+  });
+
+  // Handle login icon click: open modal if not logged in, otherwise log out
+  loginIcon.addEventListener("click", () => {
+    if (authHeader) {
+      authHeader = null;
+      messageDiv.textContent = "Logged out";
+      messageDiv.className = "info";
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => messageDiv.classList.add("hidden"), 3000);
+      fetchActivities();
+    } else {
+      loginModal.classList.remove("hidden");
+    }
+  });
+
+  // close modal when clicking the X or outside the content
+  const modalClose = document.getElementById("modal-close");
+  modalClose.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+  });
+  loginModal.addEventListener("click", (e) => {
+    if (e.target === loginModal) {
+      loginModal.classList.add("hidden");
+    }
+  });
+
+  // Handle login form submission
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const user = document.getElementById("username").value;
+    const pass = document.getElementById("password").value;
+    const trialHeader = "Basic " + btoa(`${user}:${pass}`);
+
+    // verify credentials with backend
+    try {
+      const resp = await fetch("/auth/check", {
+        headers: { Authorization: trialHeader },
+      });
+      if (resp.ok) {
+        authHeader = trialHeader;
+        loginModal.classList.add("hidden");
+        messageDiv.textContent = "Logged in as teacher";
+        messageDiv.className = "success";
+        messageDiv.classList.remove("hidden");
+        setTimeout(() => messageDiv.classList.add("hidden"), 3000);
+        fetchActivities();
+      } else {
+        messageDiv.textContent = "Invalid username or password";
+        messageDiv.className = "error";
+        messageDiv.classList.remove("hidden");
+        setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+      }
+    } catch (err) {
+      console.error("Login error", err);
+      messageDiv.textContent = "Login failed. Please try again.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => messageDiv.classList.add("hidden"), 5000);
     }
   });
 
